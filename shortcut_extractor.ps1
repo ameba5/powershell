@@ -14,6 +14,7 @@ function Get-ShortcutRawData {
     $result = [PSCustomObject]@{
         Path = (Resolve-Path $ShortcutPath).Path
         HexDump = @()
+        ExtractedStrings = @()
         ASCIIStrings = @()
         UTF8Strings = @()
         UTF16Strings = @()
@@ -45,6 +46,7 @@ function Get-ShortcutRawData {
             # 如果遇到非可打印字符，並且緩沖區已經有內容，將其輸出
             if ($stringBuffer.Count -gt 4) {
                 $string = -join $stringBuffer
+                $result.ExtractedStrings += $string
                 $result.ASCIIStrings += $string
             }
             $stringBuffer.Clear()
@@ -66,7 +68,35 @@ function Get-ShortcutRawData {
             $ascii = ""
         }
     }
+
+# ===========================================================================
+    # 從二進制數據中提取 Unicode 字符串
+    $unicodeStrings = @()
+    $currentString = New-Object System.Collections.ArrayList
     
+    for ($i = 0; $i -lt $bytes.Length - 1; $i += 2) {
+        if ($i + 1 -lt $bytes.Length) {
+            $char = [System.BitConverter]::ToChar($bytes, $i)
+            
+            if ([char]::IsLetterOrDigit($char) -or [char]::IsPunctuation($char) -or [char]::IsWhiteSpace($char)) {
+                $currentString.Add($char) | Out-Null
+            }
+            else {
+                if ($currentString.Count -gt 4) {
+                    $string = -join $currentString
+                    $unicodeStrings += $string
+                }
+                $currentString.Clear()
+            }
+        }
+    }
+    
+    $result.ExtractedStrings += $unicodeStrings
+    
+    # 去重複並過濾字符串
+    $result.ExtractedStrings = $result.ExtractedStrings | Sort-Object -Unique | Where-Object { $_.Length -gt 4 }
+# ===========================================================================
+
     # 提取 ASCII 字符串 (連續 5 個以上可打印字符)
     $asciiBuffer = New-Object System.Collections.ArrayList
     for ($i = 0; $i -lt $bytes.Length; $i++) {
